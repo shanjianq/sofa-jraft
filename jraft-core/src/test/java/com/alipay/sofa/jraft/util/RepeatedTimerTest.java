@@ -51,6 +51,7 @@ public class RepeatedTimerTest {
         @Override
         protected void onTrigger() {
             counter.incrementAndGet();
+            System.out.println(counter);
         }
 
     }
@@ -59,7 +60,7 @@ public class RepeatedTimerTest {
 
     @Before
     public void setup() {
-        this.timer = new TestTimer("test", 50);
+        this.timer = new TestTimer("test", 5000);
     }
 
     @After
@@ -71,7 +72,7 @@ public class RepeatedTimerTest {
     public void testStartTrigger() throws Exception {
         assertEquals(0, this.timer.counter.get());
         this.timer.start();
-        Thread.sleep(1000);
+        Thread.sleep(10000);
         assertEquals(20, this.timer.counter.get(), 3);
     }
 

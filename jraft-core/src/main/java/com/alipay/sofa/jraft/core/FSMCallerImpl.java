@@ -246,6 +246,7 @@ public class FSMCallerImpl implements FSMCaller {
             LOG.warn("FSMCaller is stopped, can not apply new task.");
             return false;
         }
+        //本质上也是基于Disruptor，使用Disruptor发布事件
         this.taskQueue.publishEvent(tpl);
         return true;
     }

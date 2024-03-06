@@ -90,7 +90,7 @@ public interface StateMachine {
     /**
      * Invoked when this node steps down from the leader of the replication
      * group and |status| describes detailed information
-     *
+     * 所以本质上这个方法是感知不到集群中其他的node从leader退位，从而调用的
      * @param status status info
      */
     void onLeaderStop(final Status status);

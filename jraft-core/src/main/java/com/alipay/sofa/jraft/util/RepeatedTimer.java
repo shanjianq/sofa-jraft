@@ -81,8 +81,10 @@ public abstract class RepeatedTimer implements Describer {
     }
 
     public void run() {
+        //表示RepeatedTimer已经被调用过
         this.invoking = true;
         try {
+            //调用RepeatedTimer的实例实现的方法
             onTrigger();
         } catch (final Throwable t) {
             LOG.error("Run timer failed.", t);
@@ -134,13 +136,17 @@ public abstract class RepeatedTimer implements Describer {
     public void start() {
         this.lock.lock();
         try {
+            //destroyed 默认为false
             if (this.destroyed) {
                 return;
             }
+            // 构造器初始化为true
             if (!this.stopped) {
                 return;
             }
+            //启动完成一次后下次就无法再往下继续
             this.stopped = false;
+            //running默认为false
             if (this.running) {
                 return;
             }
