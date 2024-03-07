@@ -48,8 +48,12 @@ public class Ballot {
         }
     }
 
+    //新的集群节点信息
     private final List<UnfoundPeerId> peers    = new ArrayList<>();
+    //票数，这个字段一开始的时候会被初始化为当前集群的多数票是多少，然后每获取一次投票，就会减一
+    //当减到0以下时，说明已经得到了足够的票数，代表投票成功
     private int                       quorum;
+    //老的集群节点信息
     private final List<UnfoundPeerId> oldPeers = new ArrayList<>();
     private int                       oldQuorum;
 
@@ -71,6 +75,7 @@ public class Ballot {
             }
         }
 
+        //设置需要多少票才能成为leader
         this.quorum = this.peers.size() / 2 + 1;
         if (oldConf == null) {
             return true;
