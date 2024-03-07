@@ -319,20 +319,23 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
         assert (respQueue != null);
 
         synchronized (Utils.withLockObject(respQueue)) {
+            //将需要响应的数据放入到优先队列里
             respQueue.add(new SequenceMessage(rpcCtx, msg, seq));
-
+            //校验队列里的数据是否超过了256
             if (!ctx.hasTooManyPendingResponses()) {
                 while (!respQueue.isEmpty()) {
                     final SequenceMessage queuedPipelinedResponse = respQueue.peek();
-
+                    //如果序列对不上，那么就不发送响应
                     if (queuedPipelinedResponse.sequence != ctx.getNextRequiredSequence()) {
                         // sequence mismatch, waiting for next response.
                         break;
                     }
                     respQueue.remove();
                     try {
+                        //发送响应
                         queuedPipelinedResponse.sendResponse();
                     } finally {
+                        //序列加一
                         ctx.getAndIncrementNextRequiredSequence();
                     }
                 }
@@ -448,6 +451,7 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
 
         final Node node = (Node) service;
 
+        //默认使用pipeline
         if (node.getRaftOptions().isReplicatorPipeline()) {
             final String groupId = request.getGroupId();
             final PeerPair pair = pairOf(request.getPeerId(), request.getServerId());
@@ -455,10 +459,13 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
             boolean isHeartbeat = isHeartbeatRequest(request);
             int reqSequence = -1;
             if (!isHeartbeat) {
+                //获取请求的次数，以groupId+peerId为一个维度
                 reqSequence = getAndIncrementSequence(groupId, pair, done.getRpcCtx().getConnection());
             }
+            //follower处理leader发过来的日志请求
             final Message response = service.handleAppendEntriesRequest(request, new SequenceRpcRequestClosure(done,
                 defaultResp(), groupId, pair, reqSequence, isHeartbeat));
+            //正常的数据只返回null，异常的数据会返回response
             if (response != null) {
                 if (isHeartbeat) {
                     done.getRpcCtx().sendResponse(response);

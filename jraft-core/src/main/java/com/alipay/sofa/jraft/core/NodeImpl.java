@@ -1277,7 +1277,7 @@ public class NodeImpl implements Node, RaftServerService {
             }
             LOG.debug("Node {} add a replicator, term={}, peer={}.", getNodeId(), this.currTerm, peer);
             //如果成为leader，需要把自己的日志信息复制到其他的节点上
-            //replicator则是维持着leader向follower同步数据的工具
+            //replicator（复制者）则是维持着leader向follower同步数据的工具
             if (!this.replicatorGroup.addReplicator(peer)) {
                 LOG.error("Fail to add a replicator, peer={}.", peer);
             }
@@ -1965,9 +1965,11 @@ public class NodeImpl implements Node, RaftServerService {
         boolean doUnlock = true;
         final long startMs = Utils.monotonicMs();
         this.writeLock.lock();
+        //获取entryLog个数
         final int entriesCount = request.getEntriesCount();
         boolean success = false;
         try {
+            //检查当前节点是否活跃
             if (!this.state.isActive()) {
                 LOG.warn("Node {} is not in active state, currTerm={}.", getNodeId(), this.currTerm);
                 return RpcFactoryHelper //
@@ -1987,6 +1989,7 @@ public class NodeImpl implements Node, RaftServerService {
             }
 
             // Check stale term
+            //leader传来的term如果甚至小于当下，说明是无效的日志，leader已经不是最新的数据节点了，需要响应leader自身的term，使其下台
             if (request.getTerm() < this.currTerm) {
                 LOG.warn("Node {} ignore stale AppendEntriesRequest from {}, term={}, currTerm={}.", getNodeId(),
                     request.getServerId(), request.getTerm(), this.currTerm);
@@ -1997,10 +2000,13 @@ public class NodeImpl implements Node, RaftServerService {
             }
 
             // Check term and state to step down
+            //如果当前节点不是follower节点，那么需要执行stepDown降级为follower
             checkStepDown(request.getTerm(), serverId);
+            //请求的节点并不是当前节点的leader
             if (!serverId.equals(this.leaderId)) {
                 LOG.error("Another peer {} declares that it is the leader at term {} which was occupied by leader {}.",
                     serverId, this.currTerm, this.leaderId);
+                //todo 此处想想是何意
                 // Increase the term by 1 and make both leaders step down to minimize the
                 // loss of split brain
                 stepDown(request.getTerm() + 1, false, new Status(RaftError.ELEADERCONFLICT,
@@ -2011,8 +2017,10 @@ public class NodeImpl implements Node, RaftServerService {
                     .build();
             }
 
+            //更新leader的时间戳，维护leader的心跳
             updateLastLeaderTimestamp(Utils.monotonicMs());
 
+            //校验是否在生成快照，生成快照的时候为了避免日志的顺序，是不接受日志复制请求的
             if (entriesCount > 0 && this.snapshotExecutor != null && this.snapshotExecutor.isInstallingSnapshot()) {
                 LOG.warn("Node {} received AppendEntriesRequest while installing snapshot.", getNodeId());
                 return RpcFactoryHelper //
@@ -2021,9 +2029,11 @@ public class NodeImpl implements Node, RaftServerService {
                         "Node %s:%s is installing snapshot.", this.groupId, this.serverId);
             }
 
+            //校验前一份日志和自己本地的日志是否一样，以此来判断是否存在日志遗漏，重复等问题
             final long prevLogIndex = request.getPrevLogIndex();
             final long prevLogTerm = request.getPrevLogTerm();
             final long localPrevLogTerm = this.logManager.getTerm(prevLogIndex);
+            //发起请求的节点preLogIndex对应的任期和当前节点的index锁对应的任期不匹配
             if (localPrevLogTerm != prevLogTerm) {
                 final long lastLogIndex = this.logManager.getLastLogIndex();
 
@@ -2044,6 +2054,7 @@ public class NodeImpl implements Node, RaftServerService {
                 final AppendEntriesResponse.Builder respBuilder = AppendEntriesResponse.newBuilder() //
                     .setSuccess(true) //
                     .setTerm(this.currTerm) //
+                        //响应当前节点最新的logIndex
                     .setLastLogIndex(this.logManager.getLastLogIndex());
                 doUnlock = false;
                 this.writeLock.unlock();
@@ -2069,6 +2080,7 @@ public class NodeImpl implements Node, RaftServerService {
                 allData = request.getData().asReadOnlyByteBuffer();
             }
 
+            //获取所有的LogEntry
             final List<RaftOutter.EntryMeta> entriesList = request.getEntriesList();
             for (int i = 0; i < entriesCount; i++) {
                 index++;
@@ -2094,7 +2106,7 @@ public class NodeImpl implements Node, RaftServerService {
                     entries.add(logEntry);
                 }
             }
-
+            //存储日志，并且回调返回response
             final FollowerStableClosure closure = new FollowerStableClosure(request, AppendEntriesResponse.newBuilder()
                 .setTerm(this.currTerm), this, done, this.currTerm);
             this.logManager.appendEntries(entries, closure);

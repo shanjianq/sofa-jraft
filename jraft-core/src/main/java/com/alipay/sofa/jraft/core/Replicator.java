@@ -771,6 +771,7 @@ public class Replicator implements ThreadId.OnError {
     private void sendEmptyEntries(final boolean isHeartbeat,
                                   final RpcResponseClosure<AppendEntriesResponse> heartBeatClosure) {
         final AppendEntriesRequest.Builder rb = AppendEntriesRequest.newBuilder();
+        //将集群配置设置到请求中，例如term，groupId，ServerId等
         if (!fillCommonFields(rb, this.nextIndex - 1, isHeartbeat)) {
             // id is unlock in installSnapshot
             installSnapshot();
@@ -825,7 +826,8 @@ public class Replicator implements ThreadId.OnError {
                         }
 
                     });
-
+                //Inflight 是对批量发送 出去对logEntry对一种抽象，他表示了哪些logEntry已经被封装成日志复制request发送出去了
+                //这里是将logEntry封装到inflight中
                 addInflight(RequestType.AppendEntries, this.nextIndex, 0, 0, seq, rpcFuture);
             }
             LOG.debug("Node {} send HeartbeatRequest to {} term {} lastCommittedIndex {}", this.options.getNode()
@@ -836,11 +838,13 @@ public class Replicator implements ThreadId.OnError {
     }
 
     boolean prepareEntry(final long nextSendingIndex, final int offset, final RaftOutter.EntryMeta.Builder emb,
-                         final RecyclableByteBufferList dateBuffer) {
-        if (dateBuffer.getCapacity() >= this.raftOptions.getMaxBodySize()) {
+                         final RecyclableByteBufferList dataBuffer) {
+        if (dataBuffer.getCapacity() >= this.raftOptions.getMaxBodySize()) {
             return false;
         }
         final long logIndex = nextSendingIndex + offset;
+
+        //所有的log都是存储持久化于rocks-db中，操作基于LogManager
         final LogEntry entry = this.options.getLogManager().getEntry(logIndex);
         if (entry == null) {
             return false;
@@ -859,9 +863,10 @@ public class Replicator implements ThreadId.OnError {
         }
         final int remaining = entry.getData() != null ? entry.getData().remaining() : 0;
         emb.setDataLen(remaining);
+        //把LogEntry中的数据放入DateBuffer中
         if (entry.getData() != null) {
             // should slice entry data
-            dateBuffer.add(entry.getData().slice());
+            dataBuffer.add(entry.getData().slice());
         }
         return true;
     }
@@ -919,6 +924,7 @@ public class Replicator implements ThreadId.OnError {
         r.lastRpcSendTimestamp = Utils.monotonicMs();
         r.startHeartbeatTimer(Utils.nowMs());
         // id.unlock in sendEmptyEntries
+        //发送探针请求获取follower的LastLogIndex
         r.sendProbeRequest();
         return r.id;
     }
@@ -1632,16 +1638,23 @@ public class Replicator implements ThreadId.OnError {
         }
 
         ByteBufferCollector dataBuf = null;
+        //获取最大的size为1024
         final int maxEntriesSize = this.raftOptions.getMaxEntriesSize();
+
+        //这里使用了类似对象池的技术，避免重复创建对象
         final RecyclableByteBufferList byteBufList = RecyclableByteBufferList.newInstance();
         try {
+            //循环遍历出所有的logEntry封装到byteBufList和emb中
             for (int i = 0; i < maxEntriesSize; i++) {
                 final RaftOutter.EntryMeta.Builder emb = RaftOutter.EntryMeta.newBuilder();
+                //nextSendingIndex代表下一个要发送的index，i代表偏移量
                 if (!prepareEntry(nextSendingIndex, i, emb, byteBufList)) {
                     break;
                 }
+                //一次请求是可以发送多个logEntry的
                 rb.addEntries(emb.build());
             }
+            //如果entriesCount为0的话，说明暂时没有新日志数据
             if (rb.getEntriesCount() == 0) {
                 if (nextSendingIndex < this.options.getLogManager().getFirstLogIndex()) {
                     installSnapshot();
@@ -1651,6 +1664,7 @@ public class Replicator implements ThreadId.OnError {
                 waitMoreEntries(nextSendingIndex);
                 return false;
             }
+            //将byteBufList里面的数据放入rb中
             if (byteBufList.getCapacity() > 0) {
                 dataBuf = ByteBufferCollector.allocateByRecyclers(byteBufList.getCapacity());
                 for (final ByteBuffer b : byteBufList) {
@@ -1658,6 +1672,7 @@ public class Replicator implements ThreadId.OnError {
                 }
                 final ByteBuffer buf = dataBuf.getBuffer();
                 BufferUtils.flip(buf);
+                //这里，日志的byte数组数据就有了
                 rb.setData(ZeroByteStringHelper.wrap(buf));
             }
         } finally {
