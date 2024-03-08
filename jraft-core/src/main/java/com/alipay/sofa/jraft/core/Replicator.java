@@ -1281,9 +1281,11 @@ public class Replicator implements ThreadId.OnError {
             return;
         }
 
+        //使用优先队列按照seq排序，最小的会在第一个
         final PriorityQueue<RpcResponse> holdingQueue = r.pendingResponses;
         holdingQueue.add(new RpcResponse(reqType, seq, status, request, response, rpcSendTime));
 
+        //默认holdingQueue队列里的数量不超过256
         if (holdingQueue.size() > r.raftOptions.getMaxReplicatorInflightMsgs()) {
             LOG.warn("Too many pending responses {} for replicator {}, maxReplicatorInflightMsgs={}",
                 holdingQueue.size(), r, r.raftOptions.getMaxReplicatorInflightMsgs());
@@ -1308,7 +1310,9 @@ public class Replicator implements ThreadId.OnError {
                 final RpcResponse queuedPipelinedResponse = holdingQueue.peek();
 
                 // Sequence mismatch, waiting for next response.
+                //如果follower没有响应的话就会出现次序对不上的情况，就不往下走了
                 if (queuedPipelinedResponse.seq != r.requiredNextSeq) {
+                    //如果之前存在处理，则到此直接break循环
                     if (processed > 0) {
                         if (isLogDebugEnabled) {
                             sb.append("has processed ") //
@@ -1323,8 +1327,10 @@ public class Replicator implements ThreadId.OnError {
                         return;
                     }
                 }
+                //走到这里说明seq是对得上的，那么就移除优先队列里seq最小的数据
                 holdingQueue.remove();
                 processed++;
+                //取出inflights队列里的第一个元素
                 final Inflight inflight = r.pollInflight();
                 if (inflight == null) {
                     // The previous in-flight requests were cleared.
@@ -1335,6 +1341,7 @@ public class Replicator implements ThreadId.OnError {
                     }
                     continue;
                 }
+                //seq没对上，那么说明顺序乱了，重置状态
                 if (inflight.seq != queuedPipelinedResponse.seq) {
                     // reset state
                     LOG.warn(
@@ -1349,6 +1356,7 @@ public class Replicator implements ThreadId.OnError {
                 try {
                     switch (queuedPipelinedResponse.requestType) {
                         case AppendEntries:
+                            //处理日志复制的response
                             continueSendEntries = onAppendEntriesReturned(id, inflight, queuedPipelinedResponse.status,
                                 (AppendEntriesRequest) queuedPipelinedResponse.request,
                                 (AppendEntriesResponse) queuedPipelinedResponse.response, rpcSendTime, startTimeMs, r);
@@ -1398,6 +1406,7 @@ public class Replicator implements ThreadId.OnError {
                                                    final AppendEntriesRequest request,
                                                    final AppendEntriesResponse response, final long rpcSendTime,
                                                    final long startTimeMs, final Replicator r) {
+        //检验数据序列有没有错，有错的话则重置
         if (inflight.startIndex != request.getPrevLogIndex() + 1) {
             LOG.warn(
                 "Replicator {} received invalid AppendEntriesResponse, in-flight startIndex={}, request prevLogIndex={}, reset the replicator state and probe again.",
