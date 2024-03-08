@@ -1677,6 +1677,7 @@ public class Replicator implements ThreadId.OnError {
                     return false;
                 }
                 // _id is unlock in _wait_more
+                //等待有更多的日志
                 waitMoreEntries(nextSendingIndex);
                 return false;
             }

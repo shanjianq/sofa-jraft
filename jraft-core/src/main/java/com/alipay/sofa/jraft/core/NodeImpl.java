@@ -2116,6 +2116,7 @@ public class NodeImpl implements Node, RaftServerService {
             //存储日志，并且回调返回response
             final FollowerStableClosure closure = new FollowerStableClosure(request, AppendEntriesResponse.newBuilder()
                 .setTerm(this.currTerm), this, done, this.currTerm);
+            //写入日志
             this.logManager.appendEntries(entries, closure);
             // update configuration after _log_manager updated its memory status
             checkAndSetConfiguration(true);
