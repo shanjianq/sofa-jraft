@@ -1960,6 +1960,12 @@ public class NodeImpl implements Node, RaftServerService {
         }
     }
 
+    /**
+     * 此方法只有follower节点才会调用
+     * @param request   data of the entries to append
+     * @param done      callback
+     * @return
+     */
     @Override
     public Message handleAppendEntriesRequest(final AppendEntriesRequest request, final RpcRequestClosure done) {
         boolean doUnlock = true;
@@ -2054,11 +2060,12 @@ public class NodeImpl implements Node, RaftServerService {
                 final AppendEntriesResponse.Builder respBuilder = AppendEntriesResponse.newBuilder() //
                     .setSuccess(true) //
                     .setTerm(this.currTerm) //
-                        //响应当前节点最新的logIndex
+                        //响应当前节点最新的logIndex 这里就是直接去rocksdb里取了
                     .setLastLogIndex(this.logManager.getLastLogIndex());
                 doUnlock = false;
                 this.writeLock.unlock();
                 // see the comments at FollowerStableClosure#run()
+                //即时是探针或者心跳类型的请求，也会在此刻再同步一下follower的committedIndex，从而将数据变更应用到状态机
                 this.ballotBox.setLastCommittedIndex(Math.min(request.getCommittedIndex(), prevLogIndex));
                 return respBuilder.build();
             }

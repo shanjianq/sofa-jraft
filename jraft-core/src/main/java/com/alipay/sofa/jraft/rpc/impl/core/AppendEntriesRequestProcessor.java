@@ -232,6 +232,10 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
         }
     }
 
+    /**
+     * 来自leader的日志复制请求的上下文，所有的请求都会共用这一个请求上下文
+     * 其中通过sequence区分是第几次来的请求，并且将所有响应先放入响应队列中
+     */
     static class PeerRequestContext {
 
         private final String                         groupId;
@@ -306,7 +310,7 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
     }
 
     /**
-     * Send request in pipeline mode.
+     * Send response in pipeline mode.
      */
     void sendSequenceResponse(final String groupId, final PeerPair pair, final int seq, final RpcContext rpcCtx,
                               final Message msg) {
@@ -320,12 +324,13 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
 
         synchronized (Utils.withLockObject(respQueue)) {
             //将需要响应的数据放入到优先队列里
+            //todo 此处的作用是？
             respQueue.add(new SequenceMessage(rpcCtx, msg, seq));
             //校验队列里的数据是否超过了256
             if (!ctx.hasTooManyPendingResponses()) {
                 while (!respQueue.isEmpty()) {
                     final SequenceMessage queuedPipelinedResponse = respQueue.peek();
-                    //如果序列对不上，那么就不发送响应
+                    //如果序列对不上，说明这个response并不是针对这个request的，所以就不发送响应
                     if (queuedPipelinedResponse.sequence != ctx.getNextRequiredSequence()) {
                         // sequence mismatch, waiting for next response.
                         break;
@@ -343,6 +348,7 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
                 final Connection connection = rpcCtx.getConnection();
                 LOG.warn("Closed connection to peer {}/{}, because of too many pending responses, queued={}, max={}",
                     ctx.groupId, pair, respQueue.size(), ctx.maxPendingResponses);
+                //防止请求压力过大，直接断开请求连接
                 connection.close();
                 // Close the connection if there are too many pending responses in queue.
                 removePeerRequestContext(groupId, pair);
@@ -436,6 +442,7 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
     }
 
     private int getAndIncrementSequence(final String groupId, final PeerPair pair, final Connection conn) {
+        //将来自leader的一次日志复制请求，包装成一个请求上下文，并且返回本次的请求序号
         return getOrCreatePeerRequestContext(groupId, pair, conn).getAndIncrementSequence();
     }
 
@@ -465,7 +472,6 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
             //follower处理leader发过来的日志请求
             final Message response = service.handleAppendEntriesRequest(request, new SequenceRpcRequestClosure(done,
                 defaultResp(), groupId, pair, reqSequence, isHeartbeat));
-            //正常的数据只返回null，异常的数据会返回response
             if (response != null) {
                 if (isHeartbeat) {
                     done.getRpcCtx().sendResponse(response);

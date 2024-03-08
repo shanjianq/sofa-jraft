@@ -137,6 +137,7 @@ public class BallotBox implements Lifecycle<BallotBoxOptions>, Describer {
         } finally {
             this.stampedLock.unlockWrite(stamp);
         }
+        //同步状态机
         this.waiter.onCommitted(lastCommittedIndex);
         return true;
     }
@@ -246,6 +247,7 @@ public class BallotBox implements Lifecycle<BallotBoxOptions>, Describer {
                 this.lastCommittedIndex = lastCommittedIndex;
                 this.stampedLock.unlockWrite(stamp);
                 doUnlock = false;
+                //此处开始真正地将数据变更应用到状态机上
                 this.waiter.onCommitted(lastCommittedIndex);
             }
         } finally {

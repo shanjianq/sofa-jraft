@@ -922,6 +922,7 @@ public class Replicator implements ThreadId.OnError {
         LOG.info("Replicator [group: {}, peer: {}, type: {}] is started", r.options.getGroupId(), r.options.getPeerId(), r.options.getReplicatorType());
         r.catchUpClosure = null;
         r.lastRpcSendTimestamp = Utils.monotonicMs();
+        //todo 这个作用是啥
         r.startHeartbeatTimer(Utils.nowMs());
         // id.unlock in sendEmptyEntries
         //发送探针请求获取follower的LastLogIndex
@@ -1283,10 +1284,12 @@ public class Replicator implements ThreadId.OnError {
 
         //使用优先队列按照seq排序，最小的会在第一个
         final PriorityQueue<RpcResponse> holdingQueue = r.pendingResponses;
+        //在请求端和响应端都有一个responseQueue，一个是消费，一个是发送
         holdingQueue.add(new RpcResponse(reqType, seq, status, request, response, rpcSendTime));
 
         //默认holdingQueue队列里的数量不超过256
         if (holdingQueue.size() > r.raftOptions.getMaxReplicatorInflightMsgs()) {
+            //重置这一批的请求数据，重新开始发起日志复制，先从probe请求开始
             LOG.warn("Too many pending responses {} for replicator {}, maxReplicatorInflightMsgs={}",
                 holdingQueue.size(), r, r.raftOptions.getMaxReplicatorInflightMsgs());
             r.resetInflights();
@@ -1478,6 +1481,7 @@ public class Replicator implements ThreadId.OnError {
               return false;
             }
 
+            //leader收到的来自follower的term比自身更大，说明leader本身就已经滞后，需要leader自己去主动退位
             if (response.getTerm() > r.options.getTerm()) {
                 if (isLogDebugEnabled) {
                     sb.append(" fail, greater term ") //
@@ -1489,6 +1493,7 @@ public class Replicator implements ThreadId.OnError {
                 final NodeImpl node = r.options.getNode();
                 r.notifyOnCaughtUp(RaftError.EPERM.getNumber(), true);
                 r.destroy();
+                //将自身的term提升至follower节点一致，并且自身从leader退位至follower
                 node.increaseTermTo(response.getTerm(), new Status(RaftError.EHIGHERTERMRESPONSE,
                     "Leader receives higher term heartbeat_response from peer:%s, group:%s", r.options.getPeerId(), r.options.getGroupId()));
                 return false;
@@ -1528,6 +1533,7 @@ public class Replicator implements ThreadId.OnError {
             LOG.debug(sb.toString());
         }
         // success
+        //检查任期，防止期间发生新的选举，导致数据有误
         if (response.getTerm() != r.options.getTerm()) {
             r.resetInflights();
             r.setState(State.Probe);
@@ -1543,6 +1549,7 @@ public class Replicator implements ThreadId.OnError {
         if (entriesSize > 0) {
             if (r.options.getReplicatorType().isFollower()) {
                 // Only commit index when the response is from follower.
+                //todo leader本地日志commit的时机是什么
                 r.options.getBallotBox().commitAt(r.nextIndex, r.nextIndex + entriesSize - 1, r.options.getPeerId());
             }
             if (LOG.isDebugEnabled()) {
