@@ -815,6 +815,7 @@ public class Replicator implements ThreadId.OnError {
                 this.probeCounter++;
                 setState(State.Probe);
                 final int stateVersion = this.version;
+                //因为这里日志同步请求采取了pipeline的方式，所以这里需要设置一个seq，这个seq是用来标识请求的
                 final int seq = getAndIncrementReqSeq();
                 final Future<Message> rpcFuture = this.rpcService.appendEntries(this.options.getPeerId().getEndpoint(),
                     request, -1, new RpcResponseClosureAdapter<AppendEntriesResponse>() {
@@ -916,6 +917,7 @@ public class Replicator implements ThreadId.OnError {
         }
 
         // Start replication
+        // threadId表示replicator的id，只是它同时兼备了锁的功能，所以将其定义成一个对象
         r.id = new ThreadId(r, r);
         r.id.lock();
         notifyReplicatorStatusListener(r, ReplicatorEvent.CREATED);
@@ -925,7 +927,7 @@ public class Replicator implements ThreadId.OnError {
         //todo 这个作用是啥
         r.startHeartbeatTimer(Utils.nowMs());
         // id.unlock in sendEmptyEntries
-        //发送探针请求获取follower的LastLogIndex
+        //成为leader后会先发送一个探针请求获取follower的LastLogIndex
         r.sendProbeRequest();
         return r.id;
     }
@@ -1560,6 +1562,7 @@ public class Replicator implements ThreadId.OnError {
 
         r.setState(State.Replicate);
         r.blockTimer = null;
+        //这里设置nextIndex为nextIndex+entriesSize，表示已经同步了entriesSize个日志
         r.nextIndex += entriesSize;
         r.hasSucceeded = true;
         r.notifyOnCaughtUp(RaftError.SUCCESS.getNumber(), false);
@@ -1592,6 +1595,7 @@ public class Replicator implements ThreadId.OnError {
         rb.setPeerId(this.options.getPeerId().toString());
         rb.setPrevLogIndex(prevLogIndex);
         rb.setPrevLogTerm(prevLogTerm);
+        //已经应用状态机的日志index
         rb.setCommittedIndex(this.options.getBallotBox().getLastCommittedIndex());
         return true;
     }
@@ -1696,7 +1700,7 @@ public class Replicator implements ThreadId.OnError {
             RecycleUtil.recycle(byteBufList);
         }
 
-        final AppendEntriesRequest request = rb.build();
+        final X request = rb.build();
         if (LOG.isDebugEnabled()) {
             LOG.debug(
                 "Node {} send AppendEntriesRequest to {} term {} lastCommittedIndex {} prevLogIndex {} prevLogTerm {} logIndex {} count {}",

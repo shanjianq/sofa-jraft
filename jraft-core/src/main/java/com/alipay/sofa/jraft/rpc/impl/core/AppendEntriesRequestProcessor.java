@@ -311,6 +311,8 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
 
     /**
      * Send response in pipeline mode.
+     * 因为请求是流水线模式，不管响应一股脑地一起发过来，所以响应也是这样做
+     * 最后双方通过reqSequence和respSequence来确认请求和响应是否匹配
      */
     void sendSequenceResponse(final String groupId, final PeerPair pair, final int seq, final RpcContext rpcCtx,
                               final Message msg) {
@@ -337,10 +339,10 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
                     }
                     respQueue.remove();
                     try {
-                        //发送响应
+                        //通过RpcContext发送响应
                         queuedPipelinedResponse.sendResponse();
                     } finally {
-                        //序列加一
+                        //这里不管响应有没有发出去，为了保证响应请求的顺序不错乱，序列都要加一
                         ctx.getAndIncrementNextRequiredSequence();
                     }
                 }

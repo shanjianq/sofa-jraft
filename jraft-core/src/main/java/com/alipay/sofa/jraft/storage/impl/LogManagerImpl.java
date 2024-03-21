@@ -1017,6 +1017,7 @@ public class LogManagerImpl implements LogManager {
             // should check and resolve the conflicts between the local logs and
             // |entries|
             if (firstLogEntry.getId().getIndex() > this.lastLogIndex + 1) {
+                //follower本地日志相对leader同步来的日志，少了一段
                 ThreadPoolsFactory.runClosureInThread(this.groupId, done, new Status(RaftError.EINVAL,
                     "There's gap between first_index=%d and last_log_index=%d", firstLogEntry.getId().getIndex(),
                     this.lastLogIndex));

@@ -248,6 +248,7 @@ public class BallotBox implements Lifecycle<BallotBoxOptions>, Describer {
                 this.stampedLock.unlockWrite(stamp);
                 doUnlock = false;
                 //此处开始真正地将数据变更应用到状态机上
+                //底层就是根据index遍历每一个logEntry，然后循环执行onApply方法
                 this.waiter.onCommitted(lastCommittedIndex);
             }
         } finally {
