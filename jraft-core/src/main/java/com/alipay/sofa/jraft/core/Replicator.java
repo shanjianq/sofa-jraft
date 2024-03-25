@@ -1700,7 +1700,7 @@ public class Replicator implements ThreadId.OnError {
             RecycleUtil.recycle(byteBufList);
         }
 
-        final X request = rb.build();
+        final AppendEntriesRequest request = rb.build();
         if (LOG.isDebugEnabled()) {
             LOG.debug(
                 "Node {} send AppendEntriesRequest to {} term {} lastCommittedIndex {} prevLogIndex {} prevLogTerm {} logIndex {} count {}",

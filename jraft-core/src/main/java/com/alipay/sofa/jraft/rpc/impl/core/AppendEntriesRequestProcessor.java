@@ -468,6 +468,7 @@ public class AppendEntriesRequestProcessor extends NodeRequestProcessor<AppendEn
             boolean isHeartbeat = isHeartbeatRequest(request);
             int reqSequence = -1;
             if (!isHeartbeat) {
+                //不是心跳则不用采用pipeline的方式去处理，自然也不需要生成reqSequence
                 //获取请求的次数，以groupId+peerId为一个维度
                 reqSequence = getAndIncrementSequence(groupId, pair, done.getRpcCtx().getConnection());
             }

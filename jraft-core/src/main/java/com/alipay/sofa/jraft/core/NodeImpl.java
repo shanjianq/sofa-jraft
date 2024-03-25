@@ -2035,11 +2035,11 @@ public class NodeImpl implements Node, RaftServerService {
                         "Node %s:%s is installing snapshot.", this.groupId, this.serverId);
             }
 
-            //校验前一份日志和自己本地的日志是否一样，以此来判断是否存在日志遗漏，重复等问题
             final long prevLogIndex = request.getPrevLogIndex();
             final long prevLogTerm = request.getPrevLogTerm();
             final long localPrevLogTerm = this.logManager.getTerm(prevLogIndex);
             //发起请求的节点preLogIndex对应的任期和当前节点的index锁对应的任期不匹配
+            //这里暂时只先校验term层面，index层面校验，在后面具体的logManager.appendEntries写入方法中再补充
             if (localPrevLogTerm != prevLogTerm) {
                 final long lastLogIndex = this.logManager.getLastLogIndex();
 
