@@ -40,7 +40,9 @@ public abstract class RepeatedTimer implements Describer {
     public static final Logger LOG  = LoggerFactory.getLogger(RepeatedTimer.class);
 
     private final Lock         lock = new ReentrantLock();
+    //执行定时任务的主题，默认的实现是哈希轮定时器
     private final Timer        timer;
+    //当下的定时任务
     private Timeout            timeout;
     private boolean            stopped;
     private volatile boolean   running;
@@ -80,6 +82,9 @@ public abstract class RepeatedTimer implements Describer {
         return timeoutMs;
     }
 
+    /**
+     * 该方法由timer进行回调
+     */
     public void run() {
         //表示RepeatedTimer已经被调用过
         this.invoking = true;
@@ -93,11 +98,13 @@ public abstract class RepeatedTimer implements Describer {
         this.lock.lock();
         try {
             this.invoking = false;
+            //如果调用了stop方法，那么将不会继续调用schedule方法
             if (this.stopped) {
                 this.running = false;
                 invokeDestroyed = this.destroyed;
             } else {
                 this.timeout = null;
+                //继续去包装timerTask，加入到时间轮中等待到期执行，循环往复，达到repeated的效果
                 schedule();
             }
         } finally {
@@ -183,13 +190,16 @@ public abstract class RepeatedTimer implements Describer {
         if (this.timeout != null) {
             this.timeout.cancel();
         }
+        //包装timerTask交给timer，等待时间到的时候触发调用
         final TimerTask timerTask = timeout -> {
             try {
+                //这里的run方法又调用了自己实现的onTrigger方法，执行真正的业务逻辑
                 RepeatedTimer.this.run();
             } catch (final Throwable t) {
                 LOG.error("Run timer task failed, taskName={}.", RepeatedTimer.this.name, t);
             }
         };
+        //这里构建timeout的时候，就已经开启了时间轮，并且把任务丢到对应的轮中，等待指定时间后触发
         this.timeout = this.timer.newTimeout(timerTask, adjustTimeout(this.timeoutMs), TimeUnit.MILLISECONDS);
     }
 

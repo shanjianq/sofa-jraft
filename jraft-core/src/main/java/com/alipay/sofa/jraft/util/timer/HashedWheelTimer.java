@@ -470,6 +470,7 @@ public class HashedWheelTimer implements Timer {
                     break;
                 }
                 try {
+                    //从bucket中移除取消的任务
                     timeout.remove();
                 } catch (Throwable t) {
                     if (LOG.isWarnEnabled()) {
