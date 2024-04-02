@@ -620,6 +620,7 @@ public class Replicator implements ThreadId.OnError {
     }
 
     void installSnapshot() {
+        //正在安装快照
         if (getState() == State.Snapshot) {
             LOG.warn("Replicator {} is installing snapshot, ignore the new request.", this);
             unlockId();
@@ -636,6 +637,7 @@ public class Replicator implements ThreadId.OnError {
             Requires.requireTrue(this.reader == null,
                 "Replicator [%s, %s, %s] already has a snapshot reader, current state is %s",
                     this.options.getGroupId(), this.options.getPeerId(), this.options.getReplicatorType(), getState());
+            //初始化snapshotReader
             this.reader = this.options.getSnapshotStorage().open();
             if (this.reader == null) {
                 final NodeImpl node = this.options.getNode();
@@ -646,6 +648,7 @@ public class Replicator implements ThreadId.OnError {
                 node.onError(error);
                 return;
             }
+            //生成一个读uri链接，给其他节点读取快照
             final String uri = this.reader.generateURIForCopy();
             if (uri == null) {
                 final NodeImpl node = this.options.getNode();
@@ -1651,6 +1654,8 @@ public class Replicator implements ThreadId.OnError {
      */
     private boolean sendEntries(final long nextSendingIndex) {
         final AppendEntriesRequest.Builder rb = AppendEntriesRequest.newBuilder();
+        //发送日志到follower到时候，需要判断一下是否需要发送快照，以便让follower快速跟上leader的日志进度
+        //不再回放很早以前的日志信息，既缓解了网络的吞吐量，又提升了日志复制的效率
         if (!fillCommonFields(rb, nextSendingIndex - 1, false)) {
             // unlock id in installSnapshot
             installSnapshot();

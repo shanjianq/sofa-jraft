@@ -330,18 +330,21 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
                     "You can't trigger snapshot synchronously out of StateMachine's callback methods.");
 
             }
+            //正在下载快照
             if (this.downloadingSnapshot.get() != null) {
                 ThreadPoolsFactory.runClosureInThread(getNode().getGroupId(), done, new Status(RaftError.EBUSY,
                     "Is loading another snapshot."));
                 return;
             }
 
+            //正在保存快照
             if (this.savingSnapshot) {
                 ThreadPoolsFactory.runClosureInThread(getNode().getGroupId(), done, new Status(RaftError.EBUSY,
                     "Is saving another snapshot."));
                 return;
             }
-
+            //当前业务状态机已经提交的index是否等于snapshot最后保存的日志index
+            //如果两个值相等，说明没有业务数据新增，那么没有必要再去做快照生成了
             if (this.fsmCaller.getLastAppliedIndex() == this.lastSnapshotIndex) {
                 // There might be false positive as the getLastAppliedIndex() is being
                 // updated. But it's fine since we will do next snapshot saving in a
@@ -353,6 +356,7 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
                 return;
             }
 
+            //快照数据比节点状态机的数据还要新，则不再根据当前状态机数据生成快照
             final long distance = this.fsmCaller.getLastAppliedIndex() - this.lastSnapshotIndex;
             if (distance < this.node.getOptions().getSnapshotLogIndexMargin()) {
                 // If state machine's lastAppliedIndex value minus lastSnapshotIndex value is
@@ -373,6 +377,7 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
                 return;
             }
 
+            //创建一个快照存储器，用来写数据
             final SnapshotWriter writer = this.snapshotStorage.create();
             if (writer == null) {
                 ThreadPoolsFactory.runClosureInThread(getNode().getGroupId(), done, new Status(RaftError.EIO,
@@ -380,11 +385,14 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
                 reportError(RaftError.EIO.getNumber(), "Fail to create snapshot writer.");
                 return;
             }
+            //开始存储快照
             this.savingSnapshot = true;
+            //创建回调
             final SaveSnapshotDone saveSnapshotDone = new SaveSnapshotDone(writer, done, null);
             if (sync) {
                 this.fsmCaller.onSnapshotSaveSync(saveSnapshotDone);
             } else {
+                //交给状态机保存快照
                 if (!this.fsmCaller.onSnapshotSave(saveSnapshotDone)) {
                     ThreadPoolsFactory.runClosureInThread(getNode().getGroupId(), done, new Status(RaftError.EHOSTDOWN,
                         "The raft node is down."));
@@ -516,9 +524,11 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
     public void installSnapshot(final InstallSnapshotRequest request, final InstallSnapshotResponse.Builder response,
                                 final RpcRequestClosure done) {
         final SnapshotMeta meta = request.getMeta();
+        //创建一个下载快照的任务对象
         final DownloadingSnapshot ds = new DownloadingSnapshot(request, response, done);
         // DON'T access request, response, and done after this point
         // as the retry snapshot will replace this one.
+        //将下载快照任务进行注册
         if (!registerDownloadingSnapshot(ds)) {
             LOG.warn("Fail to register downloading snapshot.");
             // This RPC will be responded by the previous session
@@ -526,6 +536,7 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
         }
         Requires.requireNonNull(this.curCopier, "curCopier");
         try {
+            //阻塞等待copy任务完成
             this.curCopier.join();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -576,6 +587,7 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
             this.lock.unlock();
         }
         final InstallSnapshotDone installSnapshotDone = new InstallSnapshotDone(reader);
+        //进入状态机执行快照安装
         if (!this.fsmCaller.onSnapshotLoad(installSnapshotDone)) {
             LOG.warn("Fail to call fsm onSnapshotLoad.");
             installSnapshotDone.run(new Status(RaftError.EHOSTDOWN, "This raft node is down"));
@@ -626,6 +638,7 @@ public class SnapshotExecutorImpl implements SnapshotExecutor {
             if (m == null) {
                 this.downloadingSnapshot.set(ds);
                 Requires.requireTrue(this.curCopier == null, "Current copier is not null");
+                //开始copy远端leader的文件
                 this.curCopier = this.snapshotStorage.startToCopyFrom(ds.request.getUri(), newCopierOpts());
                 if (this.curCopier == null) {
                     this.downloadingSnapshot.set(null);

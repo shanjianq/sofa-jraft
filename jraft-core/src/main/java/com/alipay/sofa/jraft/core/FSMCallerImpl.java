@@ -610,6 +610,7 @@ public class FSMCallerImpl implements FSMCaller {
     private void doSnapshotSave(final SaveSnapshotClosure done) {
         Requires.requireNonNull(done, "SaveSnapshotClosure is null");
         final long lastAppliedIndex = this.lastAppliedIndex.get();
+        //设置最新的任期和index到metaBuilder中
         final RaftOutter.SnapshotMeta.Builder metaBuilder = RaftOutter.SnapshotMeta.newBuilder() //
             .setLastIncludedIndex(lastAppliedIndex) //
             .setLastIncludedTerm(this.lastAppliedTerm);
@@ -639,6 +640,7 @@ public class FSMCallerImpl implements FSMCaller {
             done.run(new Status(RaftError.EINVAL, "snapshot_storage create SnapshotWriter failed"));
             return;
         }
+        //这个方法是要自己去实现的
         this.fsm.onSnapshotSave(writer, done);
     }
 

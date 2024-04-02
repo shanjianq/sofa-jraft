@@ -3476,6 +3476,7 @@ public class NodeImpl implements Node, RaftServerService {
                     getNodeId(), request.getServerId(), request.getMeta().getLastIncludedIndex(), request.getMeta()
                         .getLastIncludedTerm(), this.logManager.getLastLogId(false));
             }
+            //执行快照安装
             this.snapshotExecutor.installSnapshot(request, InstallSnapshotResponse.newBuilder(), done);
             return null;
         } finally {

@@ -98,7 +98,7 @@ public class CliServiceImpl implements CliService {
         this.cliClientService = null;
     }
 
-    private void recordConfigurationChange(final String groupId, final List<String> oldPeersList,
+    private void  recordConfigurationChange(final String groupId, final List<String> oldPeersList,
                                            final List<String> newPeersList) {
         final Configuration oldConf = new Configuration();
         for (final String peerIdStr : oldPeersList) {
